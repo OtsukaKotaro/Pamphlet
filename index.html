@@ -359,10 +359,13 @@
         min-height: 28px;
         border: 1px solid rgba(30, 64, 175, 0.55);
         border-radius: 4px;
-        padding: 0 0 0 14px;
+        padding: 6px 8px;
         background: rgba(255, 255, 255, 0.86);
-        pointer-events: auto;
         box-shadow: 0 4px 12px rgba(30, 41, 59, 0.18);
+        pointer-events: auto;
+        color: #111827;
+        font-size: 14px;
+        line-height: 1.35;
       }
 
       .text-box textarea {
@@ -373,31 +376,12 @@
         min-height: 100%;
         border: 0;
         padding: 6px 8px;
-        resize: none;
         background: transparent;
         color: #111827;
         font: inherit;
         font-size: 14px;
         line-height: 1.35;
         outline: 0;
-      }
-
-      .text-box.selected {
-        border-color: #2563eb;
-        box-shadow:
-          0 0 0 2px rgba(37, 99, 235, 0.18),
-          0 4px 12px rgba(30, 41, 59, 0.18);
-      }
-
-      .drag-handle {
-        position: absolute;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 12px;
-        border-radius: 3px 0 0 3px;
-        background: rgba(37, 99, 235, 0.55);
-        cursor: move;
       }
 
       .check-box {
@@ -407,22 +391,15 @@
         border: 1px solid rgba(30, 64, 175, 0.55);
         border-radius: 4px;
         background: rgba(255, 255, 255, 0.88);
-        cursor: move;
         pointer-events: auto;
         box-shadow: 0 4px 12px rgba(30, 41, 59, 0.18);
-      }
-
-      .check-box.selected {
-        border-color: #2563eb;
-        box-shadow:
-          0 0 0 2px rgba(37, 99, 235, 0.18),
-          0 4px 12px rgba(30, 41, 59, 0.18);
       }
 
       .check-box input {
         width: 65%;
         height: 65%;
         margin: 0;
+        pointer-events: auto;
       }
 
       .loading {
@@ -551,7 +528,6 @@
       let pdf;
       let current = 0;
       let totalPages = 0;
-      let selected = null;
 
       function buildSpreads(total) {
         const result = [[1]];
@@ -621,12 +597,6 @@
         return annotations[page];
       }
 
-      function selectBox(box, page, id) {
-        document.querySelectorAll(".text-box.selected, .check-box.selected").forEach((item) => item.classList.remove("selected"));
-        box?.classList.add("selected");
-        selected = box ? { page, id } : null;
-      }
-
       function renderAnnotationLayer(wrapper, page) {
         const layer = document.createElement("div");
         layer.className = "annotation-layer";
@@ -646,43 +616,9 @@
             input.checked = !!item.checked;
             checkBox.append(input);
 
-            checkBox.addEventListener("pointerdown", (event) => {
-              selectBox(checkBox, page, item.id);
-              const rect = wrapper.getBoundingClientRect();
-              const startX = event.clientX;
-              const startY = event.clientY;
-              const originalX = item.x;
-              const originalY = item.y;
-              let moved = false;
-
-              function move(moveEvent) {
-                const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
-                const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
-                if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
-                item.x = Math.max(0, Math.min(96, originalX + dx));
-                item.y = Math.max(0, Math.min(96, originalY + dy));
-                checkBox.style.left = `${item.x}%`;
-                checkBox.style.top = `${item.y}%`;
-              }
-
-              function stop() {
-                saveAnnotations();
-                if (moved) input.checked = !!item.checked;
-                window.removeEventListener("pointermove", move);
-                window.removeEventListener("pointerup", stop);
-              }
-
-              window.addEventListener("pointermove", move);
-              window.addEventListener("pointerup", stop);
-            });
-
             input.addEventListener("change", () => {
               item.checked = input.checked;
               saveAnnotations();
-            });
-            input.addEventListener("pointerdown", (event) => {
-              event.stopPropagation();
-              selectBox(checkBox, page, item.id);
             });
 
             layer.append(checkBox);
@@ -696,44 +632,15 @@
           box.style.width = `${item.width || 26}%`;
           box.style.height = `${item.height || 12}%`;
           box.dataset.id = item.id;
-
-          const handle = document.createElement("div");
-          handle.className = "drag-handle";
           const text = document.createElement("textarea");
           text.value = item.text;
           text.spellcheck = false;
           text.style.width = "100%";
           text.style.height = "100%";
-          box.append(handle, text);
-
-          box.addEventListener("pointerdown", () => selectBox(box, page, item.id));
-          text.addEventListener("focus", () => selectBox(box, page, item.id));
+          box.append(text);
           text.addEventListener("input", () => {
             item.text = text.value;
             saveAnnotations();
-          });
-
-          handle.addEventListener("pointerdown", (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            selectBox(box, page, item.id);
-            const rect = wrapper.getBoundingClientRect();
-
-            function move(moveEvent) {
-              item.x = Math.max(0, Math.min(92, ((moveEvent.clientX - rect.left) / rect.width) * 100));
-              item.y = Math.max(0, Math.min(92, ((moveEvent.clientY - rect.top) / rect.height) * 100));
-              box.style.left = `${item.x}%`;
-              box.style.top = `${item.y}%`;
-            }
-
-            function stop() {
-              saveAnnotations();
-              window.removeEventListener("pointermove", move);
-              window.removeEventListener("pointerup", stop);
-            }
-
-            window.addEventListener("pointermove", move);
-            window.addEventListener("pointerup", stop);
           });
 
           layer.append(box);
