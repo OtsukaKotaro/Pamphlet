@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.7.284"
+  }
+}
