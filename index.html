@@ -80,6 +80,11 @@
         min-width: 0;
       }
 
+      .toolbar button.active {
+        background: #e8efff;
+        border-color: rgba(37, 99, 235, 0.55);
+      }
+
       button,
       a {
         display: inline-flex;
@@ -368,6 +373,57 @@
         line-height: 1.35;
       }
 
+      .drag-handle {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 12px;
+        border-radius: 3px 0 0 3px;
+        background: rgba(37, 99, 235, 0.55);
+        cursor: move;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .resize-handle {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 12px;
+        height: 12px;
+        border-right: 2px solid rgba(37, 99, 235, 0.85);
+        border-bottom: 2px solid rgba(37, 99, 235, 0.85);
+        cursor: nwse-resize;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .delete-handle {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border: 0;
+        border-radius: 999px;
+        padding: 0;
+        background: rgba(220, 38, 38, 0.92);
+        color: #ffffff;
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .delete-handle:hover {
+        background: rgba(185, 28, 28, 0.96);
+      }
+
       .text-box textarea {
         box-sizing: border-box;
         display: block;
@@ -393,6 +449,9 @@
         background: rgba(255, 255, 255, 0.88);
         pointer-events: auto;
         box-shadow: 0 4px 12px rgba(30, 41, 59, 0.18);
+        cursor: move;
+        touch-action: none;
+        user-select: none;
       }
 
       .check-box input {
@@ -400,6 +459,19 @@
         height: 65%;
         margin: 0;
         pointer-events: auto;
+      }
+
+      .text-create-preview {
+        position: absolute;
+        z-index: 6;
+        border: 1px dashed rgba(37, 99, 235, 0.9);
+        border-radius: 4px;
+        background: rgba(37, 99, 235, 0.08);
+        pointer-events: none;
+      }
+
+      .text-create-mode .page-surface {
+        cursor: crosshair;
       }
 
       .loading {
@@ -485,6 +557,9 @@
         <button id="prev" type="button" aria-label="&#21069;&#12398;&#12506;&#12540;&#12472;">&lt;</button>
         <div id="counter" class="counter" aria-live="polite"></div>
         <button id="next" type="button" aria-label="&#27425;&#12398;&#12506;&#12540;&#12472;">&gt;</button>
+        <button id="addText" type="button">Text</button>
+        <button id="addCheck" type="button">Check</button>
+        <button id="exportAnnotations" type="button">Export</button>
         <a href="Pamphlet.pdf" target="_blank" rel="noopener">PDF&#12434;&#38283;&#12367;</a>
       </div>
     </header>
@@ -509,16 +584,20 @@
       const book = document.querySelector("#book");
       const prev = document.querySelector("#prev");
       const next = document.querySelector("#next");
+      const addText = document.querySelector("#addText");
+      const addCheck = document.querySelector("#addCheck");
+      const exportAnnotations = document.querySelector("#exportAnnotations");
       const counter = document.querySelector("#counter");
       const loading = document.querySelector("#loading");
       const pageImages = new Map();
       const pageRenderPromises = new Map();
       const storageKey = "pamphlet-text-boxes-v1";
-      const annotations = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      let annotations = {};
       let spreads = [];
       let pdf;
       let current = 0;
       let totalPages = 0;
+      let textCreateMode = false;
 
       function buildSpreads(total) {
         const result = [[1]];
@@ -583,9 +662,97 @@
         localStorage.setItem(storageKey, JSON.stringify(annotations));
       }
 
+      function exportAnnotationsFile() {
+        const blob = new Blob([JSON.stringify(annotations, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "annotations.json";
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function normalizeAnnotations(data) {
+        return Object.fromEntries(
+          Object.entries(data || {}).map(([page, items]) => [
+            page,
+            Array.isArray(items)
+              ? items.map((item) => ({
+                  ...item,
+                  type: item.type || "text",
+                }))
+              : [],
+          ])
+        );
+      }
+
       function pageAnnotations(page) {
         annotations[page] ||= [];
         return annotations[page];
+      }
+
+      function clampPercent(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function removeAnnotation(page, id) {
+        const items = pageAnnotations(page);
+        const index = items.findIndex((item) => item.id === id);
+        if (index < 0) return;
+        items.splice(index, 1);
+        saveAnnotations();
+        renderStatic();
+      }
+
+      function setTextCreateMode(active) {
+        textCreateMode = active;
+        addText.classList.toggle("active", active);
+        addText.setAttribute("aria-pressed", String(active));
+        document.body.classList.toggle("text-create-mode", active);
+      }
+
+      function addTextAnnotation(page, x = 18, y = 18) {
+        pageAnnotations(page).push({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: "text",
+          x,
+          y,
+          width: 26,
+          height: 12,
+          text: "",
+        });
+        saveAnnotations();
+        renderStatic();
+      }
+
+      function addCheckAnnotation(page, x = 18, y = 18) {
+        pageAnnotations(page).push({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: "check",
+          x,
+          y,
+          width: 5,
+          height: 5,
+          checked: false,
+        });
+        saveAnnotations();
+        renderStatic();
+      }
+
+      function addTextAnnotationAt(page, x, y, width, height) {
+        pageAnnotations(page).push({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: "text",
+          x,
+          y,
+          width,
+          height,
+          text: "",
+        });
+        saveAnnotations();
+        renderStatic();
       }
 
       function renderAnnotationLayer(wrapper, page) {
@@ -605,11 +772,86 @@
             const input = document.createElement("input");
             input.type = "checkbox";
             input.checked = !!item.checked;
-            checkBox.append(input);
+            const resizeHandle = document.createElement("div");
+            resizeHandle.className = "resize-handle";
+            const deleteHandle = document.createElement("button");
+            deleteHandle.className = "delete-handle";
+            deleteHandle.type = "button";
+            deleteHandle.setAttribute("aria-label", "削除");
+            deleteHandle.textContent = "×";
+            checkBox.append(input, resizeHandle, deleteHandle);
 
             input.addEventListener("change", () => {
               item.checked = input.checked;
               saveAnnotations();
+            });
+
+            deleteHandle.addEventListener("pointerdown", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            });
+
+            deleteHandle.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              removeAnnotation(page, item.id);
+            });
+
+            checkBox.addEventListener("pointerdown", (event) => {
+              if (event.target === input || event.target === resizeHandle || event.target === deleteHandle) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = wrapper.getBoundingClientRect();
+              const startX = event.clientX;
+              const startY = event.clientY;
+              const originalX = item.x;
+              const originalY = item.y;
+
+              function move(moveEvent) {
+                const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
+                const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
+                item.x = clampPercent(originalX + dx, 0, 96);
+                item.y = clampPercent(originalY + dy, 0, 96);
+                checkBox.style.left = `${item.x}%`;
+                checkBox.style.top = `${item.y}%`;
+              }
+
+              function stop() {
+                saveAnnotations();
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", stop);
+              }
+
+              window.addEventListener("pointermove", move);
+              window.addEventListener("pointerup", stop);
+            });
+
+            resizeHandle.addEventListener("pointerdown", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = wrapper.getBoundingClientRect();
+              const startX = event.clientX;
+              const startY = event.clientY;
+              const startWidth = ((item.width || 5) / 100) * rect.width;
+              const startHeight = ((item.height || 5) / 100) * rect.height;
+
+              function resize(moveEvent) {
+                const nextWidthPx = Math.max(18, startWidth + moveEvent.clientX - startX);
+                const nextHeightPx = Math.max(18, startHeight + moveEvent.clientY - startY);
+                item.width = clampPercent((nextWidthPx / rect.width) * 100, 3, 24);
+                item.height = clampPercent((nextHeightPx / rect.height) * 100, 3, 24);
+                checkBox.style.width = `${item.width}%`;
+                checkBox.style.height = `${item.height}%`;
+              }
+
+              function stopResize() {
+                saveAnnotations();
+                window.removeEventListener("pointermove", resize);
+                window.removeEventListener("pointerup", stopResize);
+              }
+
+              window.addEventListener("pointermove", resize);
+              window.addEventListener("pointerup", stopResize);
             });
 
             layer.append(checkBox);
@@ -628,16 +870,149 @@
           text.spellcheck = false;
           text.style.width = "100%";
           text.style.height = "100%";
-          box.append(text);
+          const resizeHandle = document.createElement("div");
+          resizeHandle.className = "resize-handle";
+          const dragHandle = document.createElement("div");
+          dragHandle.className = "drag-handle";
+          const deleteHandle = document.createElement("button");
+          deleteHandle.className = "delete-handle";
+          deleteHandle.type = "button";
+          deleteHandle.setAttribute("aria-label", "削除");
+          deleteHandle.textContent = "×";
+          box.append(dragHandle, text, resizeHandle, deleteHandle);
           text.addEventListener("input", () => {
             item.text = text.value;
             saveAnnotations();
+          });
+
+          deleteHandle.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          });
+
+          deleteHandle.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeAnnotation(page, item.id);
+          });
+
+          dragHandle.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = wrapper.getBoundingClientRect();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const originalX = item.x;
+            const originalY = item.y;
+
+            function move(moveEvent) {
+              const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
+              const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
+              item.x = clampPercent(originalX + dx, 0, 92);
+              item.y = clampPercent(originalY + dy, 0, 92);
+              box.style.left = `${item.x}%`;
+              box.style.top = `${item.y}%`;
+            }
+
+            function stop() {
+              saveAnnotations();
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", stop);
+            }
+
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", stop);
+          });
+
+          resizeHandle.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = wrapper.getBoundingClientRect();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const startWidth = ((item.width || 26) / 100) * rect.width;
+            const startHeight = ((item.height || 12) / 100) * rect.height;
+
+            function resize(moveEvent) {
+              const nextWidthPx = Math.max(48, startWidth + moveEvent.clientX - startX);
+              const nextHeightPx = Math.max(36, startHeight + moveEvent.clientY - startY);
+              item.width = clampPercent((nextWidthPx / rect.width) * 100, 6, 96 - item.x);
+              item.height = clampPercent((nextHeightPx / rect.height) * 100, 5, 96 - item.y);
+              box.style.width = `${item.width}%`;
+              box.style.height = `${item.height}%`;
+            }
+
+            function stopResize() {
+              saveAnnotations();
+              window.removeEventListener("pointermove", resize);
+              window.removeEventListener("pointerup", stopResize);
+            }
+
+            window.addEventListener("pointermove", resize);
+            window.addEventListener("pointerup", stopResize);
           });
 
           layer.append(box);
         });
 
         wrapper.append(layer);
+      }
+
+      function enableTextCreation(wrapper, page) {
+        wrapper.addEventListener("pointerdown", (event) => {
+          if (!textCreateMode) return;
+          if (event.button !== 0) return;
+          if (event.target.closest(".annotation-layer")) return;
+          event.preventDefault();
+          event.stopPropagation();
+
+          const rect = wrapper.getBoundingClientRect();
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const startPercentX = ((startX - rect.left) / rect.width) * 100;
+          const startPercentY = ((startY - rect.top) / rect.height) * 100;
+          const preview = document.createElement("div");
+          preview.className = "text-create-preview";
+          wrapper.append(preview);
+
+          function updatePreview(moveEvent) {
+            const currentPercentX = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+            const currentPercentY = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+            const left = clampPercent(Math.min(startPercentX, currentPercentX), 0, 100);
+            const top = clampPercent(Math.min(startPercentY, currentPercentY), 0, 100);
+            const right = clampPercent(Math.max(startPercentX, currentPercentX), 0, 100);
+            const bottom = clampPercent(Math.max(startPercentY, currentPercentY), 0, 100);
+            preview.style.left = `${left}%`;
+            preview.style.top = `${top}%`;
+            preview.style.width = `${Math.max(1, right - left)}%`;
+            preview.style.height = `${Math.max(1, bottom - top)}%`;
+          }
+
+          function finishCreate(moveEvent) {
+            moveEvent.preventDefault();
+            const endPercentX = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+            const endPercentY = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+            const left = clampPercent(Math.min(startPercentX, endPercentX), 0, 100);
+            const top = clampPercent(Math.min(startPercentY, endPercentY), 0, 100);
+            const right = clampPercent(Math.max(startPercentX, endPercentX), 0, 100);
+            const bottom = clampPercent(Math.max(startPercentY, endPercentY), 0, 100);
+            const width = Math.max(6, right - left);
+            const height = Math.max(5, bottom - top);
+            preview.remove();
+            window.removeEventListener("pointermove", updatePreview);
+            window.removeEventListener("pointerup", finishCreate);
+            if (width < 1 || height < 1) {
+              setTextCreateMode(false);
+              return;
+            }
+            addTextAnnotationAt(page, left, top, width, height);
+            setTextCreateMode(false);
+          }
+
+          window.addEventListener("pointermove", updatePreview);
+          window.addEventListener("pointerup", finishCreate, { once: true });
+          updatePreview(event);
+        });
       }
 
       function createPage(page, side) {
@@ -651,6 +1026,7 @@
         label.textContent = pageName(page);
         wrapper.append(label);
         renderAnnotationLayer(wrapper, page);
+        enableTextCreation(wrapper, page);
         return wrapper;
       }
 
@@ -717,6 +1093,27 @@
         document.documentElement.style.setProperty("--spread-ratio", (pageRatio * 2).toFixed(6));
       }
 
+      async function loadAnnotations() {
+        const stored = normalizeAnnotations(JSON.parse(localStorage.getItem(storageKey) || "{}"));
+        if (Object.keys(stored).length > 0) {
+          annotations = stored;
+          return;
+        }
+
+        try {
+          const response = await fetch("./annotations.json", { cache: "no-store" });
+          if (response.ok) {
+            annotations = normalizeAnnotations(await response.json());
+            localStorage.setItem(storageKey, JSON.stringify(annotations));
+            return;
+          }
+        } catch (error) {
+          console.warn("annotations.json could not be loaded", error);
+        }
+
+        annotations = stored;
+      }
+
       function ensurePageImage(pageNumber) {
         if (pageImages.has(pageNumber)) {
           return Promise.resolve(pageImages.get(pageNumber));
@@ -757,7 +1154,14 @@
 
       prev.addEventListener("click", () => turn(-1));
       next.addEventListener("click", () => turn(1));
+      addText.addEventListener("click", () => setTextCreateMode(!textCreateMode));
+      addCheck.addEventListener("click", () => addCheckAnnotation(spreads[current][0]));
+      exportAnnotations.addEventListener("click", exportAnnotationsFile);
       window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          setTextCreateMode(false);
+          return;
+        }
         if (document.activeElement?.tagName === "TEXTAREA") return;
         if (event.key === "ArrowLeft") turn(-1);
         if (event.key === "ArrowRight") turn(1);
@@ -765,6 +1169,7 @@
 
       try {
         await loadPdf();
+        await loadAnnotations();
         await preloadAllPages();
         loading.hidden = true;
         renderStatic();
