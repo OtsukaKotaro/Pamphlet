@@ -438,21 +438,12 @@
         }
 
         .stage {
-          width: min(94vw, calc(76vh * var(--page-ratio)), 520px);
+          width: min(96vw, 720px);
           aspect-ratio: var(--page-ratio) / 1;
         }
 
         .spread {
-          grid-template-columns: 1fr;
-        }
-
-        .spread:not(.single) .page.left {
-          display: none;
-        }
-
-        .spread:not(.single) .page.right {
-          border-left: 1px solid rgba(90, 70, 48, 0.28);
-          border-radius: 8px;
+          grid-template-columns: 1fr 1fr;
         }
 
         .gutter {
