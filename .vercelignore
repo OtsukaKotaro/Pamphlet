@@ -1,0 +1,5 @@
+node_modules/
+pages/
+server.log
+server.err.log
+
